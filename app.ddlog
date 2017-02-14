@@ -1,0 +1,213 @@
+## Author Scott Phillpott
+## Aegis Extraction
+## app.ddlog
+## Ramdom variable to predict############################################################
+
+#This application's goal is to predict whether a given token is describing a ship class, a specific ship,
+# and if the ship is an Aegis Cruiser taken from a corpus of data defined as navy_dbpedia.
+
+@extraction
+is_ship_class?(
+	@key
+	@reference(relation="ship_mention, column="mention_id", alias="s1")
+	s1_id text,
+	@key
+	@reference(relation="ship_mention, column=mention_id", alias="s2")
+	p2_id text
+).
+
+## Input Data #############################################################################
+
+@source
+aegis_files(
+	@key
+	@distributed_by
+	id text,
+	@searchable
+	content text
+).
+
+@source
+navy_dbpedia(
+	@key
+	ship1_name,
+	@key
+	ship_2_name text
+).
+
+## NLP markup ####################################################################################
+@source
+sentences(
+	@key
+	@distributed_by
+	# XXX This breaks the search index.  @source should not be derived from athother @source
+	#@references(relation="aegis_files", column="id")
+	doc_id		text,
+	@key
+	sentence_index int,
+	@searchable
+	sentence_text	text,
+	tokens			text[],
+	lemmas			text[],
+	pos_tags		text[],
+	ner_tags		text[],
+	doc_offsets		int[],
+	dep_types		text[],
+	dep_tokens		int[]
+).
+
+
+function nlp_markup over (
+		doc_id text),
+		content text
+	) returns rows like sentences
+	implementation "udf/nlp_markup.sh" handles tsv lines.
+	
+sentences += nlp_markup(doc_id, content) :-
+	aegis_files(doc_id, content).
+	
+## Candidate mapping ###########################################################################
+@extraction
+ship_mention(
+	@key
+	mention_id text,
+	@searchable
+	mention_text text,
+	@distributed_by
+	@reference(relation="sentences" column="sentence_index", alias="appears_in
+")
+	doc_id text,
+	@references(relation="sentences", column="sentence_index", alias="appears_in
+")
+	sentence_index int,
+	begin_index int,
+	end_index int
+).
+
+function map_ship_mention over (
+		doc_id text,
+		sentence_index int
+		tokens text[],
+		ner_tags text[]
+	) returns rows like ship_mention
+	implementation "udf/map_ship_mention.py" andles tsv lines.
+	
+ship_mention += map_ship_mention(
+	doc_id, sentence_index, tokens, ner_tags
+) :- sentences(doc_id, sentence_index, _, tokens, _, _, ner_tags, _, _, _).
+
+ship_candiate(
+	s1_id text,
+	s1_name text,
+	s1_id text
+	s2_name text
+).
+
+num_ships(doc_id, sentence_index, COUNT(p)) :-
+	ship_mention(p, _, doc_id, sentence_index, _, _,).
+	
+ship_candiate(s1, s1_name, s2, s2_name) :-
+	num_ships(same_doc, same_sentence, num_s),
+	ship_mention (s1, s1_name, same_doc, same_sentence, s1_begin, _),
+	ship_mention (s2, s2_name, same_doc, same_sentence, s1_begin, _),
+	num_s < 5,
+	s1 < s2,
+	s1_name != s2_name
+	s1_begin != s2_begin.
+	
+## Feature Extraction #######################################################################################################################################
+
+# Feature extraction (using DDLIB via a UDF) at the relation level
+@extraction
+ship_feature(
+	@key
+	@references(relation="is_ship_class", column="s1_id", alias="is_ship_class"))
+	s1_id text,
+	@key
+	@references(relation="is_ship_class", column="s2_id", alias="is_ship_class")
+	s2_id text,
+	@key
+	feature text
+).
+
+function extract_ship_features over (
+		s1_id text,
+		s2_id text,
+		s1_begin_index int,
+		s1_end_index int,
+		s2_begin_index int,
+		s2_end_index int,
+		doc_id text,
+		tokens text [],
+		lemmas text [],
+		pos_tags text[],
+		ner_tags text[],
+		dep_types text[],
+		dep_tokens int[]
+	) returns rows like ship_feature
+	implementation "udf/extract_ship_features.py" handles tsv lines.
+	
+ship_feature += extract_ship_features(
+	s1_id, s2_id, s1_begin_index, s1_end_index, s2_begin_index, s2_end_index,
+	doc_id, sent_index, _, tokens, lemmas, pos_tags, ner_tags, _, dep_types, dep_tokens
+) :-
+	ship_mention(s1_id, _, doc_id, sent_index, s1_begin_index, s1_end_index),
+	ship_mention(s2_id, _, doc_id, sent_index, s2_begin_index, s2_end_index),
+	sentences(doc_id, sent_index, _, tokens, lemmas, pos_tags, ner_tags, _, dep_types, dep_tokens).
+	
+## Distant Supervision #############################################################################################
+@extraction
+ship_label(
+	@key
+	@references(relation="is_ship_class", column="s1_id", alias",is_ship_class)
+	s1_id text,
+	@key
+	@references(relation="is_ship_class", column="s2_id", alias",is_ship_class)
+	s1_id text,
+	@navigable
+	label int,
+	@navigable
+	rule_id text
+).
+
+#make sure all pairs in ship_candidate are considered as unsupervised examples
+ship_label(s1, s2, 0, NULL) :- ship_candidate(s1, _, s2, _).
+
+#distant supervision using data from DBpedia
+ship_label(s1, s2, 1, "from DBpedia") :-
+	ship_candiate(s1, s1_name, s2, s2_name),
+	ships_dbpedia(n1, n2),
+	[ lower(n1) = lower(s1_name, lower(n2) = lower(s2_name) ;
+	  lower(n2) = lower(s1_name, lower(n1) = lower(s2_name) ].
+	  
+#supervision by heuristic rule in UDF
+function supervise over (
+		s1_id text, s2_begin int, )
+
+
+###########################################################################
+## Inference Rules ########################################################
+
+# Features
+@weight(f)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
