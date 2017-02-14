@@ -1,0 +1,7 @@
+# Author Scott Phillpott
+# Initializing the database for the DeepDive application
+# The database is initialized using the db.url file or can be overridden with the DEEPDIVE_DB_URL environmental variable.
+
+# To initialize, run $ deepdive db init
+
+
