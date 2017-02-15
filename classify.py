@@ -6,7 +6,7 @@
 from deepdive import *  #Required for @tsv_extractor and @returns
 
 ships 			= [...]
-ship_classes	= [...]
+ship_classes		= [...]
 ship_names		= [...]
 
 @tsv_extractor	#Declares the generator below as the main fuction to call
